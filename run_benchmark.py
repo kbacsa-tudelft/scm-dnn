@@ -28,11 +28,6 @@ _DATASET_LOADERS = {
     "hai": lambda nrows: load_hai(nrows=nrows),
 }
 
-_METHOD_FACTORIES = {
-    "cdt": lambda: CDT(),
-    "pbnn": lambda: PbNN(),
-}
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -40,6 +35,15 @@ def main() -> None:
     parser.add_argument("--methods", default="cdt,pbnn", help="Comma-separated subset of: cdt,pbnn")
     parser.add_argument("--nrows", type=int, default=None, help="Cap rows read per CSV, for fast dev runs")
     parser.add_argument("--out", default="results", help="Directory to write results.csv/results.json")
+    parser.add_argument(
+        "--cdt-discovery-rows", type=int, default=None,
+        help="Rows CDT's discovery phase subsamples for CI testing (default: CDT's own, 5000). "
+             "Discovery time scales worse than linearly with this (measured on SWaT: "
+             "5k rows/37s/17 edges, 20k/192s/27 edges, 50k/608s/30 edges) -- 50000 is a "
+             "reasonable 'thorough' setting if you want more paper-scale discovery and can "
+             "spare the time (expect several minutes per dataset, more on WADI/HAI's wider "
+             "column sets).",
+    )
     args = parser.parse_args()
 
     dataset_names = args.datasets.split(",")
@@ -53,7 +57,14 @@ def main() -> None:
               f"attacks={int(datasets[name].test_labels.sum())}/{len(datasets[name].test_labels)}",
               file=sys.stderr)
 
-    methods = {name: _METHOD_FACTORIES[name] for name in method_names}
+    def make_cdt():
+        kwargs = {}
+        if args.cdt_discovery_rows is not None:
+            kwargs["discovery_subsample_rows"] = args.cdt_discovery_rows
+        return CDT(**kwargs)
+
+    method_factories = {"cdt": make_cdt, "pbnn": lambda: PbNN()}
+    methods = {name: method_factories[name] for name in method_names}
 
     results = run_benchmark(methods, datasets)
 

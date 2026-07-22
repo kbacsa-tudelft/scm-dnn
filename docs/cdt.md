@@ -60,9 +60,18 @@ For every variable `V_i`, build lagged copies `V_i(t-1), ..., V_i(t-tau)`
   original (unlagged) variable names, keeping the shortest surviving lag as
   an edge attribute. If collapsing introduces a cycle, the longest-lag edge
   in the cycle is dropped.
-- Runs on a contiguous 5,000-row subsample of `train` (CI-testing over
-  100k+ rows is unnecessary for structure learning and would be slow in
-  pure Python/sklearn).
+- Runs on a contiguous 5,000-row subsample of `train` by default (CI-testing
+  over 100k+ rows would be slow in pure Python/sklearn, and discovery time
+  scales worse than linearly with row count). Configurable via
+  `CDT(discovery_subsample_rows=...)` or `run_benchmark.py`'s
+  `--cdt-discovery-rows` flag for a more thorough (paper-scale) pass.
+  Measured on SWaT: 5,000 rows -> 37s / 17 edges, 20,000 -> 192s / 27 edges,
+  50,000 -> 608s (~10 min) / 30 edges -- more rows reliably finds more
+  structure (more statistical power for the CI tests), at a steep runtime
+  cost. 50,000 is a reasonable "thorough" setting; expect it to take at
+  least as long on WADI/HAI, which have more target variables per discovery
+  pass. The default stays at 5,000 so quick/smoke-test runs remain fast --
+  see "Known limitations" below.
 
 ### 2. SCM estimation (Eqs 14–16)
 
@@ -146,6 +155,11 @@ during `fit()`/`score()`.
 
 All are constructor kwargs on `CDT(...)`.
 
+`discovery_subsample_rows` (default 5,000) is not a paper-given parameter --
+it's this implementation's tractability knob for Phase I's row cap (see
+"Discovery" above for the measured runtime/edge-count tradeoff at larger
+values).
+
 ## Usage
 
 ```python
@@ -154,6 +168,7 @@ from methods.cdt.model import CDT
 
 dataset = load_swat(nrows=20000)
 method = CDT()                       # or CDT(tau=10, k=10, alpha=0.05, ...)
+# method = CDT(discovery_subsample_rows=50000)  # more thorough discovery, ~10min/dataset
 method.fit(dataset.train)
 
 scores = method.score(dataset.test)          # continuous anomaly score per row
@@ -166,8 +181,10 @@ method.root_cause(dataset.test, attack_row)  # [(parent_label, shapley_value), .
 
 ## Known limitations
 
-- Discovery subsamples training data to 5,000 rows; very rare causal edges
-  that only manifest outside that window may be missed.
+- Discovery subsamples training data to 5,000 rows by default; very rare
+  causal edges that only manifest outside that window may be missed.
+  Raise `discovery_subsample_rows` (or `run_benchmark.py --cdt-discovery-rows`)
+  for a more thorough pass, at a steep runtime cost -- see "Discovery" above.
 - Graph-accuracy metrics (SHD, edge precision/recall — see
   `src/metrics/graph.py`) are only meaningful when a ground-truth graph
   shares node names with the discovered graph. Only HAI ships a

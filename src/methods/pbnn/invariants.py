@@ -58,6 +58,14 @@ def _subsystem_prefix(col: str, dataset_name: str) -> str | None:
     if dataset_name.startswith("hai"):
         m = re.match(r"^(P\d+)_", col)
         return m.group(1) if m else None
+    if dataset_name.startswith("z24"):
+        # Z24 columns are "setupNN__channel" (see data/z24.py) -- each setup
+        # is its own physically-moved sensor array, the natural "subsystem"
+        # grouping here. No sensor-type hints match Z24's location+direction
+        # channel codes (e.g. "139V", "DP2V"), so target selection within a
+        # group falls back to `infer_invariants`'s arbitrary-first-N choice.
+        m = re.match(r"^(setup\d+)__", col)
+        return m.group(1) if m else None
     return None
 
 

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.signal import welch
 
 from .style import (
     ATTACK_COLOR,
@@ -190,5 +191,28 @@ def plot_graph_topology(graph: nx.DiGraph, out_path: str, seed: int = 0) -> str:
     ax.axis("off")
     fig.tight_layout()
     fig.savefig(out_path, dpi=160)
+    plt.close(fig)
+    return out_path
+
+
+def plot_psd_grid(
+    signals: dict[str, np.ndarray], fs: float, out_path: str, ncols: int = 5, nperseg: int = 4096
+) -> str:
+    """Small multiples of power spectral density, one subplot per named
+    signal (e.g. one per scenario) -- past ~4 categorical series a single
+    overlaid multi-line plot stops being readable, so this facets instead."""
+    names = list(signals.keys())
+    nrows, ncols = _grid_shape(len(names), ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.2 * nrows), sharex=True)
+    axes = np.atleast_1d(axes).flatten()
+    for ax, name in zip(axes, names):
+        freqs, power = welch(signals[name], fs=fs, nperseg=nperseg)
+        ax.semilogy(freqs, power, color=categorical_color(0), linewidth=1.0)
+        ax.set_title(name, fontsize=9)
+        ax.tick_params(labelsize=7)
+    for ax in axes[len(names):]:
+        ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(out_path)
     plt.close(fig)
     return out_path

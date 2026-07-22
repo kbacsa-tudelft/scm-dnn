@@ -28,7 +28,13 @@ _LABEL_COL = "Attack"
 _TIME_COL = "timestamp"
 
 
-def _load_concat(paths: list[str], nrows: int | None) -> pd.DataFrame:
+def _load_concat(pattern: str, nrows: int | None) -> pd.DataFrame:
+    paths = glob.glob(pattern)
+    if not paths:
+        raise FileNotFoundError(
+            f"No files matched {pattern!r} -- have you extracted the HAI dataset yet? "
+            f"See README.md 'Setup' for the unzip commands."
+        )
     frames = [pd.read_csv(p, nrows=nrows) for p in sorted(paths)]
     return pd.concat(frames, ignore_index=True)
 
@@ -39,8 +45,8 @@ def load_hai(
     nrows: int | None = None,
 ) -> ICSDataset:
     version_dir = f"{root}/{version}"
-    train_raw = _load_concat(glob.glob(f"{version_dir}/train*.csv"), nrows)
-    test_raw = _load_concat(glob.glob(f"{version_dir}/test*.csv"), nrows)
+    train_raw = _load_concat(f"{version_dir}/train*.csv", nrows)
+    test_raw = _load_concat(f"{version_dir}/test*.csv", nrows)
 
     columns = [c for c in train_raw.columns if c not in (_TIME_COL, _LABEL_COL)]
 

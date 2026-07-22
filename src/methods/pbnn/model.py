@@ -20,6 +20,8 @@ from .invariants import Invariant, build_invariants
 
 
 def _guess_dataset(columns: list[str]) -> str:
+    if any(c.startswith("setup") and "__" in c for c in columns):
+        return "z24"
     if any(c.startswith(("1_", "2_", "3_")) for c in columns):
         return "wadi"
     if any(c.startswith(("P1_", "P2_", "P3_", "P4_")) for c in columns):

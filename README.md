@@ -18,6 +18,13 @@ benchmark number, since they surface real data-quality issues (e.g. WADI has
 a genuine ~3-day mid-collection outage and an inconsistent date format in
 its raw training file) that the modeling pipeline works around rather than fixes.
 
+A fourth dataset, the **Z24 Bridge Progressive Damage Test (PDT)** campaign
+(`datasets/data-z24/`), has been processed and profiled in
+[`reports/eda_z24.md`](reports/eda_z24.md) but is **not yet wired into the
+benchmark harness** — it's structurally different (17 discrete, mostly-
+irreversible damage scenarios rather than a continuous normal/attack time
+series) and integration is deferred. See `src/data/z24.py` for the loader.
+
 Both are from-scratch reproductions (neither paper's own code is public).
 Where a paper is genuinely ambiguous or missing a numeric value, the code
 uses a documented default — see the method docs above for the full list of
@@ -29,12 +36,14 @@ those judgment calls before trusting any specific number.
 papers/                     the two source papers (PDF)
 datasets/                   raw dataset archives (checked in)
   swat.zip / wadi.zip / hal.zip
-datasets/raw/                <- extracted CSVs/JSON live here (gitignored, see Setup)
+  data-z24/                  Z24 bridge PDT archives + PDF documentation (see Setup)
+datasets/raw/                <- extracted/processed data lives here (gitignored, see Setup)
 
 src/
-  data/                     one loader per dataset -> common ICSDataset shape
-    base.py                   ICSDataset dataclass + shared cleaning helpers
-    swat.py / wadi.py / hai.py
+  data/                     one loader per dataset
+    base.py                   ICSDataset dataclass + shared cleaning helpers (swat/wadi/hai)
+    swat.py / wadi.py / hai.py  -> common ICSDataset shape
+    z24.py                    Z24 PDT loader -- different shape, see "Z24" section below
 
   methods/
     base.py                  AnomalyDetectionMethod interface every method implements
@@ -70,12 +79,14 @@ src/
 
 scripts/
   eda_swat.py / eda_wadi.py / eda_hai.py   generate reports/eda_<name>.md + figures/<name>/*.png
+  build_z24_manifest.py     one-time Z24 processing step (combines setups -> per-scenario parquet)
+  eda_z24.py                generates reports/eda_z24.md + figures/z24/*.png
 
 run_benchmark.py            CLI entry point
 requirements.txt
 tests/                      pytest suite (data loaders, metrics, end-to-end integration)
 results/                    benchmark output lands here (gitignored)
-reports/                    EDA reports (eda_swat.md, eda_wadi.md, eda_hai.md) + figures/
+reports/                    EDA reports (eda_swat.md, eda_wadi.md, eda_hai.md, eda_z24.md) + figures/
 ```
 
 ## Setup
@@ -96,6 +107,26 @@ cd ..
 either paper; skip it unless you specifically need it, then unzip without
 the `-x` filter.)
 
+## Z24 bridge dataset (processed + profiled, not yet in the benchmark)
+
+```bash
+mkdir -p datasets/raw/z24
+unzip -q datasets/data-z24/pdt_01-08.zip "*/fvt/*" "*/FVT/*" -d datasets/raw/z24
+unzip -q datasets/data-z24/pdt_09_17.zip "*/fvt/*" "*/FVT/*" -d datasets/raw/z24
+python scripts/build_z24_manifest.py   # combines each scenario's 9 setups -> datasets/raw/z24/combined/<NN>.parquet
+python scripts/eda_z24.py              # -> reports/eda_z24.md + reports/figures/z24/
+```
+
+Only the forced-vibration-test (`fvt`/`FVT`) data is extracted — ambient-
+vibration (`avt`) is out of scope for now, and the pre-existing
+`datasets/data-z24/accelerations_*.csv` files (5.6GB) were investigated and
+found to be unrelated to the 17-scenario PDT structure (no headers,
+mismatched row-count pattern, much newer timestamps than the source zips) —
+they're intentionally untouched and unused. See `src/data/z24.py`'s
+module docstring and [`reports/eda_z24.md`](reports/eda_z24.md) for the full
+picture, including two scenarios (03, 17) whose damage-scenario labels are
+inferred/best-effort rather than confirmed from source documentation.
+
 ## Running the benchmark
 
 ```bash
@@ -107,11 +138,18 @@ python run_benchmark.py
 
 # A specific subset
 python run_benchmark.py --datasets wadi,hai --methods cdt --out results/cdt_only
+
+# More thorough CDT discovery (paper-scale-ish; ~10min/dataset, see docs/cdt.md)
+python run_benchmark.py --methods cdt --cdt-discovery-rows 50000
 ```
 
 Flags: `--datasets` and `--methods` are comma-separated subsets of
 `swat,wadi,hai` / `cdt,pbnn`; `--nrows` caps rows read per CSV (omit for
-full data); `--out` sets the output directory (default `results/`).
+full data); `--out` sets the output directory (default `results/`);
+`--cdt-discovery-rows` raises CDT's discovery-phase row cap above its
+default 5,000 for a more thorough (slower) structure-learning pass — see
+`docs/cdt.md`'s "Discovery" section for the measured runtime/edge-count
+tradeoff.
 
 Output: `results.csv` and `results.json`, one row per (method, dataset)
 pair, with precision/recall/F1 (raw and point-adjusted), detection rate,
@@ -140,6 +178,8 @@ See `docs/cdt.md` / `docs/pbnn.md` for each method's full interface
 (`causal_graph()`, `root_cause()`, hyperparameters).
 
 ## Exploratory data analysis
+
+(For Z24, see the "Z24 bridge dataset" section above — it has its own EDA script and a materially different report structure.)
 
 ```bash
 python scripts/eda_swat.py
@@ -173,8 +213,14 @@ Full suite takes a few minutes (it fits real models on real data, not mocks).
 Everything runs on CPU (no GPU in this environment). Fit times scale with
 row count; PbNN in particular trains one DCNN per invariant with multiple
 epochs over mini-batches, so it's the slower of the two on large inputs
-(HAI's full training files, uncapped, took several minutes in testing).
-Use `--nrows` while iterating; drop it only when you want real numbers.
+(HAI's full training files, uncapped, took ~49 minutes to fit in a full-scale
+run). Use `--nrows` while iterating; drop it only when you want real numbers.
+
+CDT's own fit time is largely decoupled from row count (its discovery phase
+subsamples to a fixed 5,000 rows by default) -- but that row cap is also a
+real fidelity ceiling: `--cdt-discovery-rows 50000` finds meaningfully more
+graph structure at the cost of ~10x longer discovery (measured on SWaT: 5k
+rows/37s/17 edges vs 50k rows/608s/30 edges — see `docs/cdt.md`).
 
 ## Known caveats (see the method docs for the full list)
 

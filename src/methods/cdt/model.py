@@ -9,7 +9,7 @@ import pandas as pd
 
 from ..base import AnomalyDetectionMethod
 from . import attribution
-from .discovery import ALPHA, MAX_CANDIDATE_PARENTS, MAX_LAG, discover_graph
+from .discovery import ALPHA, DISCOVERY_SUBSAMPLE_ROWS, MAX_CANDIDATE_PARENTS, MAX_LAG, discover_graph
 from .scm import EPOCHS, LR, fit_scm
 from .scoring import (
     centrality_weights,
@@ -31,6 +31,7 @@ class CDT(AnomalyDetectionMethod):
         epochs: int = EPOCHS,
         lr: float = LR,
         threshold_quantile: float = THRESHOLD_QUANTILE,
+        discovery_subsample_rows: int = DISCOVERY_SUBSAMPLE_ROWS,
         seed: int = 0,
     ):
         self.tau = tau
@@ -39,10 +40,19 @@ class CDT(AnomalyDetectionMethod):
         self.epochs = epochs
         self.lr = lr
         self.threshold_quantile = threshold_quantile
+        # Discovery time scales worse than linearly with this (measured on
+        # SWaT: 5k rows/37s/17 edges, 20k/192s/27 edges, 50k/608s/30 edges) --
+        # more rows does find more structure, but the default stays small so
+        # quick/smoke-test runs remain fast. Raise it explicitly for a more
+        # thorough (paper-scale) discovery pass.
+        self.discovery_subsample_rows = discovery_subsample_rows
         self.seed = seed
 
     def fit(self, train: pd.DataFrame) -> None:
-        self.graph_ = discover_graph(train, tau=self.tau, k=self.k, alpha=self.alpha, seed=self.seed)
+        self.graph_ = discover_graph(
+            train, tau=self.tau, k=self.k, alpha=self.alpha,
+            subsample_rows=self.discovery_subsample_rows, seed=self.seed,
+        )
         self.scm_ = fit_scm(train, self.graph_, epochs=self.epochs, lr=self.lr, seed=self.seed)
         self.weights_ = centrality_weights(self.graph_)
 

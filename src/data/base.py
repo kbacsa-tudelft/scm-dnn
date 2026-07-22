@@ -47,10 +47,3 @@ def drop_constant_columns(*frames: pd.DataFrame) -> list[str]:
         nunique = frame.nunique(dropna=False)
         keep &= set(nunique[nunique > 1].index)
     return [c for c in frames[0].columns if c in keep]
-
-
-def standardize(train: pd.DataFrame, test: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Z-score both frames using train statistics only."""
-    mean = train.mean()
-    std = train.std().replace(0.0, 1.0)
-    return (train - mean) / std, (test - mean) / std
