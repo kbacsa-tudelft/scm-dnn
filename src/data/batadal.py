@@ -20,6 +20,14 @@ evaluate against here.
 -- unlike HAI's boiler graph, it isn't wired in as a ground-truth causal
 graph, since node ids would need a translation layer to the SCADA tag names
 below (same category of gap as HAI's, not attempted here).
+
+Read with `encoding="latin-1"` rather than pandas' default UTF-8 assumption:
+these ICS dataset exports (SWaT/WADI/HAI/BATADAL alike) carry stray non-UTF-8
+bytes on some machines/pandas/locale combinations, raising
+`UnicodeDecodeError` under strict UTF-8 decoding even where a given dev copy
+happens not to trip over it. Latin-1 maps every byte 0x00-0xFF to a
+character 1:1 -- it never raises a decode error, and is identical to
+ASCII/UTF-8 for the tag names and numeric data actually used here.
 """
 from __future__ import annotations
 
@@ -32,7 +40,7 @@ _TIME_COL = "DATETIME"
 
 
 def _load_raw(path: str, nrows: int | None = None) -> pd.DataFrame:
-    df = pd.read_csv(path, nrows=nrows)
+    df = pd.read_csv(path, nrows=nrows, encoding="latin-1")
     df.columns = [c.strip() for c in df.columns]
     return df
 

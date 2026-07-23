@@ -13,6 +13,14 @@ subsystem (datasets/raw/hai/graph/boiler/phy_boiler.json), not for the full
 serialization artifact -- the same tuple is duplicated on every node -- so
 only graph topology (nodes, directed edges, edge-level `dynamics` code) is
 trustworthy and used here.
+
+CSVs are read with `encoding="latin-1"` rather than pandas' default UTF-8
+assumption: these ICS dataset exports (SWaT/WADI/HAI/BATADAL alike) carry
+stray non-UTF-8 bytes on some machines/pandas/locale combinations, raising
+`UnicodeDecodeError` under strict UTF-8 decoding even where a given dev copy
+happens not to trip over it. Latin-1 maps every byte 0x00-0xFF to a
+character 1:1 -- it never raises a decode error, and is identical to
+ASCII/UTF-8 for the tag names and numeric data actually used here.
 """
 from __future__ import annotations
 
@@ -35,7 +43,7 @@ def _load_concat(pattern: str, nrows: int | None) -> pd.DataFrame:
             f"No files matched {pattern!r} -- have you extracted the HAI dataset yet? "
             f"See README.md 'Setup' for the unzip commands."
         )
-    frames = [pd.read_csv(p, nrows=nrows) for p in sorted(paths)]
+    frames = [pd.read_csv(p, nrows=nrows, encoding="latin-1") for p in sorted(paths)]
     return pd.concat(frames, ignore_index=True)
 
 

@@ -5,7 +5,11 @@ coerce dtypes, forward/back-fill NaNs, drop constant columns and z-score --
 all things an EDA report needs to characterize as *findings*, not have
 silently fixed before it sees the data. Parsing mechanics (which rows/columns
 to skip, how each file's label convention works) intentionally mirror those
-loaders since that part isn't "cleaning", just correct file reading.
+loaders since that part isn't "cleaning", just correct file reading -- that
+includes reading CSVs with `encoding="latin-1"` rather than pandas' default
+UTF-8 assumption, since these ICS dataset exports carry stray non-UTF-8
+bytes on some machines/pandas/locale combinations (see e.g.
+`src/data/wadi.py`'s module docstring).
 """
 from __future__ import annotations
 
@@ -22,14 +26,12 @@ def _strip_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_raw_swat(root: str = "datasets/raw/swat") -> dict[str, pd.DataFrame]:
     return {
-        "normal": _strip_cols(pd.read_csv(f"{root}/normal.csv")),
-        "attack": _strip_cols(pd.read_csv(f"{root}/attack.csv")),
+        "normal": _strip_cols(pd.read_csv(f"{root}/normal.csv", encoding="latin-1")),
+        "attack": _strip_cols(pd.read_csv(f"{root}/attack.csv", encoding="latin-1")),
     }
 
 
 def load_raw_wadi(root: str = "datasets/raw/wadi") -> dict[str, pd.DataFrame]:
-    # encoding="latin-1": WADI's CSVs carry stray non-UTF-8 bytes on some
-    # machines/pandas versions (see src/data/wadi.py's module docstring).
     return {
         "days14": _strip_cols(pd.read_csv(f"{root}/WADI_14days_new.csv", encoding="latin-1")),
         "attack": _strip_cols(pd.read_csv(f"{root}/WADI_attackdataLABLE.csv", skiprows=1, encoding="latin-1")),
@@ -38,15 +40,15 @@ def load_raw_wadi(root: str = "datasets/raw/wadi") -> dict[str, pd.DataFrame]:
 
 def load_raw_hai(root: str = "datasets/raw/hai", version: str = "hai-22.04") -> dict[str, dict[str, pd.DataFrame]]:
     version_dir = f"{root}/{version}"
-    train = {p.split("/")[-1]: pd.read_csv(p) for p in sorted(glob.glob(f"{version_dir}/train*.csv"))}
-    test = {p.split("/")[-1]: pd.read_csv(p) for p in sorted(glob.glob(f"{version_dir}/test*.csv"))}
+    train = {p.split("/")[-1]: pd.read_csv(p, encoding="latin-1") for p in sorted(glob.glob(f"{version_dir}/train*.csv"))}
+    test = {p.split("/")[-1]: pd.read_csv(p, encoding="latin-1") for p in sorted(glob.glob(f"{version_dir}/test*.csv"))}
     return {"train": train, "test": test}
 
 
 def load_raw_batadal(root: str = "datasets/raw/batadal/batadal") -> dict[str, pd.DataFrame]:
     return {
-        "dataset03": _strip_cols(pd.read_csv(f"{root}/BATADAL_dataset03.csv")),
-        "dataset04": _strip_cols(pd.read_csv(f"{root}/BATADAL_dataset04.csv")),
+        "dataset03": _strip_cols(pd.read_csv(f"{root}/BATADAL_dataset03.csv", encoding="latin-1")),
+        "dataset04": _strip_cols(pd.read_csv(f"{root}/BATADAL_dataset04.csv", encoding="latin-1")),
     }
 
 

@@ -13,6 +13,14 @@ leak-free split we instead hold out a tail slice of `normal.csv` for testing
 and combine it with `attack.csv`:
     train = normal.csv[:train_frac]
     test  = normal.csv[train_frac:] + attack.csv
+
+Read with `encoding="latin-1"` rather than pandas' default UTF-8 assumption:
+these ICS dataset exports (SWaT/WADI/HAI/BATADAL alike) carry stray non-UTF-8
+bytes on some machines/pandas/locale combinations, raising
+`UnicodeDecodeError` under strict UTF-8 decoding even where a given dev copy
+happens not to trip over it. Latin-1 maps every byte 0x00-0xFF to a
+character 1:1 -- it never raises a decode error, and is identical to
+ASCII/UTF-8 for the tag names and numeric data actually used here.
 """
 from __future__ import annotations
 
@@ -25,7 +33,7 @@ _TIME_COL = "Timestamp"
 
 
 def _load_raw(path: str, nrows: int | None = None) -> pd.DataFrame:
-    df = pd.read_csv(path, nrows=nrows)
+    df = pd.read_csv(path, nrows=nrows, encoding="latin-1")
     df.columns = [c.strip() for c in df.columns]
     return df
 
