@@ -28,9 +28,11 @@ def load_raw_swat(root: str = "datasets/raw/swat") -> dict[str, pd.DataFrame]:
 
 
 def load_raw_wadi(root: str = "datasets/raw/wadi") -> dict[str, pd.DataFrame]:
+    # encoding="latin-1": WADI's CSVs carry stray non-UTF-8 bytes on some
+    # machines/pandas versions (see src/data/wadi.py's module docstring).
     return {
-        "days14": _strip_cols(pd.read_csv(f"{root}/WADI_14days_new.csv")),
-        "attack": _strip_cols(pd.read_csv(f"{root}/WADI_attackdataLABLE.csv", skiprows=1)),
+        "days14": _strip_cols(pd.read_csv(f"{root}/WADI_14days_new.csv", encoding="latin-1")),
+        "attack": _strip_cols(pd.read_csv(f"{root}/WADI_attackdataLABLE.csv", skiprows=1, encoding="latin-1")),
     }
 
 
