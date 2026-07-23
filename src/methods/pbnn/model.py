@@ -14,19 +14,10 @@ import networkx as nx
 import pandas as pd
 
 from ..base import AnomalyDetectionMethod
+from ..subsystem_grouping import guess_dataset
 from .cusum import CUSUMParams, cusum_score, fit_cusum
 from .dcnn import DCNN, DCNNConfig, DEFAULT_CONFIG, predict_dcnn, train_dcnn
 from .invariants import Invariant, build_invariants
-
-
-def _guess_dataset(columns: list[str]) -> str:
-    if any(c.startswith("setup") and "__" in c for c in columns):
-        return "z24"
-    if any(c.startswith(("1_", "2_", "3_")) for c in columns):
-        return "wadi"
-    if any(c.startswith(("P1_", "P2_", "P3_", "P4_")) for c in columns):
-        return "hai"
-    return "swat"
 
 
 class PbNN(AnomalyDetectionMethod):
@@ -46,7 +37,7 @@ class PbNN(AnomalyDetectionMethod):
         self.threshold_: float = 0.0
 
     def fit(self, train: pd.DataFrame) -> None:
-        self.invariants = build_invariants(list(train.columns), dataset_name=_guess_dataset(list(train.columns)))
+        self.invariants = build_invariants(list(train.columns), dataset_name=guess_dataset(list(train.columns)))
         if not self.invariants:
             raise ValueError("No PbNN invariants could be built from the given columns")
 

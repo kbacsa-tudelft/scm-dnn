@@ -151,9 +151,19 @@ method.root_cause(dataset.test, t)   # invariants ranked by residual magnitude a
 
 ## Known limitations
 
-- WADI/HAI invariants are a heuristic extension, not the paper's own
+- WADI/HAI/BATADAL invariants are a heuristic extension, not the paper's own
   domain knowledge — expect noticeably weaker performance there than on
-  SWaT (see the benchmark results in the root `README.md`).
+  SWaT (see the benchmark results in the root `README.md`). BATADAL's tag
+  naming (`L_T1`, `F_PU1`, `P_J280`, ...) doesn't match any of
+  `subsystem_grouping.py`'s dataset-specific prefix patterns either, so it
+  falls all the way through to `infer_invariants`'s SWaT-shaped fallback,
+  which only picks up a handful of `P_J*` junction-pressure tags via an
+  incidental regex match — a real run collapsed to the same "flag
+  everything" pattern already seen on WADI/HAI (F1 ~0.10, false-alarm-rate
+  ~1.0). Unlike TEP (dataset-agnostic by construction, no grouping needed
+  at all -- see `docs/cnn1d.md`'s note on CNN1D's combined mode), PbNN's
+  invariant-based design means every new SCADA-tag naming convention needs
+  its own grouping heuristic to work well; BATADAL's hasn't been added.
 - Full Table IV grid search (`grid_search_dcnn`) is available but not run
   by default; `PbNN`'s constructor always uses `DEFAULT_CONFIG` unless you
   build and pass a custom `DCNNConfig` yourself (grid search isn't wired

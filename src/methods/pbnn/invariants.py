@@ -17,8 +17,9 @@ something described in the paper.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+
+from ..subsystem_grouping import group_columns
 
 
 @dataclass
@@ -51,39 +52,20 @@ def swat_invariants(columns: list[str]) -> list[Invariant]:
 _SENSOR_HINTS = ("PV", "FIT", "LIT", "AIT", "PIT", "FT", "LT", "AT", "PT", "TIT")
 
 
-def _subsystem_prefix(col: str, dataset_name: str) -> str | None:
-    if dataset_name == "wadi":
-        m = re.match(r"^(\d+[A-Za-z]?)_", col)
-        return m.group(1) if m else None
-    if dataset_name.startswith("hai"):
-        m = re.match(r"^(P\d+)_", col)
-        return m.group(1) if m else None
-    if dataset_name.startswith("z24"):
-        # Z24 columns are "setupNN__channel" (see data/z24.py) -- each setup
-        # is its own physically-moved sensor array, the natural "subsystem"
-        # grouping here. No sensor-type hints match Z24's location+direction
-        # channel codes (e.g. "139V", "DP2V"), so target selection within a
-        # group falls back to `infer_invariants`'s arbitrary-first-N choice.
-        m = re.match(r"^(setup\d+)__", col)
-        return m.group(1) if m else None
-    return None
-
-
 def infer_invariants(
     columns: list[str],
     dataset_name: str,
     max_invariants: int = 8,
     max_predictors: int = 4,
 ) -> list[Invariant]:
-    """Group columns by subsystem-prefix; within each subsystem pick one or two
-    sensor-like columns as targets and a few other same-subsystem columns as
-    predictors. Our own generalization of the paper's invariant idea to
-    datasets it never covers -- not from the paper."""
-    groups: dict[str, list[str]] = {}
-    for col in columns:
-        prefix = _subsystem_prefix(col, dataset_name)
-        if prefix is not None:
-            groups.setdefault(prefix, []).append(col)
+    """Group columns by subsystem-prefix (see `subsystem_grouping.py`); within
+    each subsystem pick one or two sensor-like columns as targets and a few
+    other same-subsystem columns as predictors. Our own generalization of
+    the paper's invariant idea to datasets it never covers -- not from the
+    paper. No sensor-type hints match Z24's location+direction channel codes
+    (e.g. "139V", "DP2V"), so target selection there falls back to the
+    arbitrary-first-N choice below."""
+    groups = group_columns(columns, dataset_name)
 
     invariants = []
     for prefix, cols in sorted(groups.items()):

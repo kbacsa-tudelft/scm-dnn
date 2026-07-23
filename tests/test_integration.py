@@ -8,18 +8,19 @@ import math
 from data.swat import load_swat
 from methods.cdt.model import CDT
 from methods.pbnn.model import PbNN
+from methods.cnn1d.model import CNN1D
 from benchmark.runner import run_benchmark
 
 _NROWS = 8000
 
 
-def test_benchmark_runs_both_methods_on_swat():
+def test_benchmark_runs_all_methods_on_swat():
     dataset = load_swat(nrows=_NROWS)
-    methods = {"cdt": lambda: CDT(), "pbnn": lambda: PbNN()}
+    methods = {"cdt": lambda: CDT(), "pbnn": lambda: PbNN(), "cnn1d": lambda: CNN1D()}
 
     results = run_benchmark(methods, {"swat": dataset})
 
-    assert len(results) == 2
+    assert len(results) == 3
     for result in results:
         assert result.error is None, f"{result.method} failed: {result.error}"
         assert 0.0 <= result.metrics["f1"] <= 1.0
@@ -27,6 +28,13 @@ def test_benchmark_runs_both_methods_on_swat():
         assert result.metrics["recall_pa"] >= result.metrics["recall"]
         assert math.isfinite(result.metrics["conflict_index_factor"])
         assert result.fit_seconds > 0
+        assert result.config, f"{result.method} produced no config snapshot"
+
+    cdt_config = next(r.config for r in results if r.method == "cdt")
+    assert cdt_config["discovery_subsample_rows"] == 5000  # CDT's default, unless overridden
+
+    cnn1d_config = next(r.config for r in results if r.method == "cnn1d")
+    assert cnn1d_config["ensemble"] == "combined"  # CNN1D's default
 
 
 def test_cdt_exposes_causal_graph_and_root_cause():

@@ -2,6 +2,7 @@
 loaders and collects metrics for each (method, dataset) pair."""
 from __future__ import annotations
 
+import dataclasses
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -23,9 +24,34 @@ class RunResult:
     score_seconds: float
     graph_metrics: dict | None = None
     error: str | None = None
+    config: dict | None = None
+
+
+def _serialize(value):
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    if isinstance(value, (int, float, str, bool, type(None))):
+        return value
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_serialize(v) for v in value]
+    return repr(value)
+
+
+def _extract_config(method: AnomalyDetectionMethod) -> dict:
+    """Snapshot of the method's constructor-set hyperparameters, taken before
+    `fit()` runs so nothing fitted (models, discovered graphs, ...) leaks in
+    -- only plain `__init__` attributes are present at this point. Exists so
+    a saved results.csv/json records exactly which settings (e.g.
+    `discovery_subsample_rows`) produced a given run, rather than requiring
+    that to be reconstructed from memory."""
+    return {k: _serialize(v) for k, v in vars(method).items()}
 
 
 def run_one(method_name: str, method: AnomalyDetectionMethod, dataset: ICSDataset) -> RunResult:
+    config = _extract_config(method)
+
     t0 = time.time()
     method.fit(dataset.train)
     fit_seconds = time.time() - t0
@@ -55,6 +81,7 @@ def run_one(method_name: str, method: AnomalyDetectionMethod, dataset: ICSDatase
         fit_seconds=fit_seconds,
         score_seconds=score_seconds,
         graph_metrics=graph_metrics,
+        config=config,
     )
 
 

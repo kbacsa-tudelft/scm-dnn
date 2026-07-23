@@ -3,15 +3,27 @@
 Unlike SWaT/WADI/HAI, this isn't a single continuous time series with a
 binary normal/attack label. It's 17 discrete, mostly-irreversible structural
 damage scenarios (folders `01`-`17`) applied in sequence to a real bridge in
-1998, each with a forced-vibration test (`fvt`/`FVT`) consisting of 9 "setup"
-recordings -- the accelerometer array physically moved between setups, so
-each setup has a different channel set. Ambient-vibration test data (`avt`)
-is out of scope here (not extracted; see the unzip commands below).
+1998, each with two parallel test campaigns per scenario, 9 "setup"
+recordings each -- the accelerometer array physically moved between setups,
+so each setup has a different channel set:
+  - `fvt`/`FVT`: Forced Vibration Test (shaker-driven).
+  - `avt`/`AVT` (scenario 17 only lowercase `avt`, no uppercase variant):
+    Ambient Vibration Test (traffic/wind-driven, no shaker).
+AVT and FVT do **not** share sensor locations -- they're different roving-
+array configurations covering different bridge segments (confirmed directly:
+AVT setup01 has channels `99V,100V-103V,199L-203V,...`, FVT setup01 has
+`139V-143V,239L-243V,...`, zero overlap). AVT also has no driving-point
+channels (`DP1V`/`DP2V` -- no shaker, nothing to co-locate with). Only the 5
+reference channels (`R1V`,`R2L`,`R2T`,`R2V`,`R3V`) are common to both -- see
+`scripts/eda_z24_comparison.py` for the AVT-vs-FVT comparison this enables.
 
-Since all 9 setups within a scenario used the same forcing (per the user),
-sample index is a valid common time axis across them, and `combine_scenario`
-collapses each scenario's 9 setups into one wide DataFrame rather than
-keeping 153 separate per-setup files. Every column is prefixed by its setup
+Since all 9 setups within a scenario/campaign used the same
+forcing/ambient-conditions regime (per the user, for FVT; AVT's "same
+conditions" assumption is weaker since traffic/wind aren't controlled --
+see `scripts/eda_z24_avt.py`'s consistency check), sample index is a valid
+common time axis across them, and `combine_scenario` collapses each
+scenario's 9 setups into one wide DataFrame per campaign rather than keeping
+153 separate per-setup files. Every column is prefixed by its setup
 (`setup01__139V`, ..., `setup09__DP2V`) -- including the reference/
 driving-point channels that recur in (almost) every setup -- rather than
 deduplicating them, since averaging or keeping only one copy would hide it
@@ -24,10 +36,18 @@ Extraction (raw `.mat` files, not checked into git):
     mkdir -p datasets/raw/z24
     unzip -q datasets/data-z24/pdt_01-08.zip "*/fvt/*" "*/FVT/*" -d datasets/raw/z24
     unzip -q datasets/data-z24/pdt_09_17.zip "*/fvt/*" "*/FVT/*" -d datasets/raw/z24
+    unzip -q datasets/data-z24/pdt_01-08.zip "*/avt/*" "*/AVT/*" -d datasets/raw/z24
+    unzip -q datasets/data-z24/pdt_09_17.zip "*/avt/*" "*/AVT/*" -d datasets/raw/z24
 
 `readme.txt` in datasets/data-z24/ confirms: each `.mat` file has a `data`
 matrix (rows=samples, cols=channels) and a `labelshulp` array of channel
 names, sampled at 100 Hz.
+
+`test_type="fvt"` (the default everywhere below) keeps producing exactly
+the original paths (`datasets/raw/z24/combined/<NN>.parquet`,
+`datasets/raw/z24/manifest.csv`) so the already-built FVT pipeline and
+its outputs are untouched; `test_type="avt"` uses its own
+(`combined_avt/`, `manifest_avt.csv`).
 """
 from __future__ import annotations
 
@@ -119,22 +139,23 @@ class Z24Dataset:
         return pd.read_parquet(path)
 
 
-def _fvt_dir(root: str, scenario: str) -> str:
-    for name in ("fvt", "FVT"):
+def _campaign_dir(root: str, scenario: str, test_type: str) -> str:
+    for name in (test_type, test_type.upper()):
         candidate = f"{root}/{scenario}/{name}"
         if os.path.isdir(candidate):
             return candidate
     raise FileNotFoundError(
-        f"No fvt/FVT folder found for scenario {scenario!r} under {root}/{scenario} -- "
-        f"have you extracted the PDT zips yet? See the module docstring in src/data/z24.py."
+        f"No {test_type}/{test_type.upper()} folder found for scenario {scenario!r} under "
+        f"{root}/{scenario} -- have you extracted the PDT zips yet? See the module docstring "
+        f"in src/data/z24.py."
     )
 
 
-def _setup_files(root: str, scenario: str) -> list[str]:
-    fvt_dir = _fvt_dir(root, scenario)
-    paths = sorted(glob.glob(f"{fvt_dir}/{scenario}setup*.mat"))
+def _setup_files(root: str, scenario: str, test_type: str) -> list[str]:
+    campaign_dir = _campaign_dir(root, scenario, test_type)
+    paths = sorted(glob.glob(f"{campaign_dir}/{scenario}setup*.mat"))
     if not paths:
-        raise FileNotFoundError(f"No {scenario}setup*.mat files found in {fvt_dir}")
+        raise FileNotFoundError(f"No {scenario}setup*.mat files found in {campaign_dir}")
     return paths
 
 
@@ -144,11 +165,12 @@ def load_setup_mat(path: str) -> pd.DataFrame:
     return pd.DataFrame(mat["data"], columns=labels)
 
 
-def combine_scenario(root: str, scenario: str) -> pd.DataFrame:
-    """Load all 9 fvt setups for `scenario` and concatenate column-wise,
-    prefixing every column by its setup number (see module docstring for why
-    shared channels aren't deduplicated)."""
-    paths = _setup_files(root, scenario)
+def combine_scenario(root: str, scenario: str, test_type: str = "fvt") -> pd.DataFrame:
+    """Load all 9 setups of the given campaign (`test_type`: "fvt" or "avt")
+    for `scenario` and concatenate column-wise, prefixing every column by
+    its setup number (see module docstring for why shared channels aren't
+    deduplicated)."""
+    paths = _setup_files(root, scenario, test_type)
     frames = []
     for path in paths:
         setup_id = os.path.basename(path).split("setup")[1].split(".")[0]
@@ -159,13 +181,25 @@ def combine_scenario(root: str, scenario: str) -> pd.DataFrame:
     return pd.concat([f.iloc[:n_samples].reset_index(drop=True) for f in frames], axis=1)
 
 
-def build_manifest(root: str = "datasets/raw/z24", out_dir: str = "datasets/raw/z24/combined") -> pd.DataFrame:
-    """Combines every scenario's 9 setups into one parquet file each and
-    writes/returns the manifest (one row per scenario)."""
+def build_manifest(
+    root: str = "datasets/raw/z24",
+    test_type: str = "fvt",
+    out_dir: str | None = None,
+    manifest_name: str | None = None,
+) -> pd.DataFrame:
+    """Combines every scenario's 9 setups of the given campaign into one
+    parquet file each and writes/returns the manifest (one row per scenario).
+    `test_type="fvt"` (default) reproduces the original, untouched paths;
+    `test_type="avt"` defaults to its own (`combined_avt/`, `manifest_avt.csv`)."""
+    if out_dir is None:
+        out_dir = f"{root}/combined" if test_type == "fvt" else f"{root}/combined_{test_type}"
+    if manifest_name is None:
+        manifest_name = "manifest.csv" if test_type == "fvt" else f"manifest_{test_type}.csv"
+
     os.makedirs(out_dir, exist_ok=True)
     rows = []
     for scenario in sorted(SCENARIOS):
-        combined = combine_scenario(root, scenario)
+        combined = combine_scenario(root, scenario, test_type)
         out_path = f"{out_dir}/{scenario}.parquet"
         combined.to_parquet(out_path)
         meta = SCENARIOS[scenario]
@@ -180,14 +214,16 @@ def build_manifest(root: str = "datasets/raw/z24", out_dir: str = "datasets/raw/
             path=out_path,
         ))
     manifest = pd.DataFrame(rows)
-    manifest.to_csv(f"{root}/manifest.csv", index=False)
+    manifest.to_csv(f"{root}/{manifest_name}", index=False)
     return manifest
 
 
-def load_z24_pdt(root: str = "datasets/raw/z24") -> Z24Dataset:
-    manifest_path = f"{root}/manifest.csv"
+def load_z24_pdt(root: str = "datasets/raw/z24", test_type: str = "fvt") -> Z24Dataset:
+    manifest_name = "manifest.csv" if test_type == "fvt" else f"manifest_{test_type}.csv"
+    manifest_path = f"{root}/{manifest_name}"
     if not os.path.exists(manifest_path):
         raise FileNotFoundError(
-            f"{manifest_path} not found -- run scripts/build_z24_manifest.py first."
+            f"{manifest_path} not found -- run scripts/build_z24_manifest.py "
+            f"{'' if test_type == 'fvt' else f'--test-type {test_type} '}first."
         )
     return Z24Dataset(manifest=pd.read_csv(manifest_path, dtype={"scenario": str}), root=root)

@@ -13,7 +13,7 @@ _COLUMNS = [
     "precision_pa", "recall_pa", "f1_pa",
     "detection_rate", "false_alarm_rate", "conflict_index_factor",
     "shd", "edge_precision", "edge_recall", "edge_f1",
-    "fit_seconds", "score_seconds", "error",
+    "fit_seconds", "score_seconds", "error", "config",
 ]
 
 
@@ -21,7 +21,8 @@ def to_dataframe(results: list[RunResult]) -> pd.DataFrame:
     rows = []
     for r in results:
         row = {"method": r.method, "dataset": r.dataset, "fit_seconds": round(r.fit_seconds, 2),
-               "score_seconds": round(r.score_seconds, 2), "error": r.error}
+               "score_seconds": round(r.score_seconds, 2), "error": r.error,
+               "config": json.dumps(r.config) if r.config is not None else None}
         row.update(r.metrics)
         if r.graph_metrics:
             row.update(r.graph_metrics)
